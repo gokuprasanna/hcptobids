@@ -4,24 +4,27 @@ structural MRI (T1w/T2w) data to BIDS.
 
 Usage:
     python hcp2bids.py <meg_root> <mri_root> <bids_root>
-        [--noise-root <emptyroom_root>] [--subjects-dir <SUBJECTS_DIR>]
+        [--noise-root <emptyroom_root>] [--subjects ID ...]
 
-Note: unprocessed HCP MEG has no digitized headshape or fiducials, so the
-BIDS output can't be used for MEG<->MRI coregistration as-is. With
---subjects-dir, FreeSurfer fiducials are written into the T1w sidecar as
-anatomical landmarks, but that only documents them; it is not coregistration.
+Head position: unprocessed HCP MEG has no digitized head shape or fiducials,
+so MNE can't build the device->head transform itself. It is rebuilt here from
+the 4D device->head transform stored in each run (see restore_head_position).
+The head->MRI transform comes from HCP's MEG anatomy package; see
+create_transforms.py.
 """
 
 import argparse
 import json
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import mne
 import numpy as np
 import pandas as pd
-from mne_bids import BIDSPath, update_anat_landmarks, write_anat, write_raw_bids
+from mne_bids import BIDSPath, write_anat, write_raw_bids
+
+from common import BTI_DEV_TRANSLATION, BTI_HEAD_TO_HEAD
 
 
 TASK_NAME = "storymath"
@@ -37,14 +40,36 @@ EVENT_COLUMN_DESCRIPTIONS = {
 # ---------------------------------------------------------------------------
 
 def read_hcp_bti(run_dir: Path) -> mne.io.Raw:
-    """Read the 4D/BTi MEG data in ``<run_dir>/4D``."""
+    """Read the 4D/BTi MEG data in ``<run_dir>/4D``, with bytes decoded to str."""
     fourd_dir = run_dir / "4D"
-    return mne.io.read_raw_bti(
+    raw = mne.io.read_raw_bti(
         pdf_fname=fourd_dir / "c,rfDC",
         config_fname=fourd_dir / "config",
         head_shape_fname=None,
+        rotation_x=0.0,
+        translation=BTI_DEV_TRANSLATION,
         preload=True,
     )
+    sanitize_bti_raw(raw)
+    return raw
+
+
+def restore_head_position(raw: mne.io.Raw):
+    """
+    Set ``raw.info['dev_head_t']`` from the 4D device->head transform, in place.
+
+    Without a head shape file, ``read_raw_bti`` sets ``dev_head_t`` to the
+    identity, as if the head sat at the device origin. The real head position
+    of the run is in ``raw.info['dev_ctf_t']`` (4D device -> 4D head). This
+    composes it with the reader's device conversion (4D -> Neuromag device:
+    the 4D -> RAS rotation plus BTI_DEV_TRANSLATION) and the 4D -> RAS head
+    rotation, the same way MNE does when a head shape is available.
+    """
+    bti_dev_to_neuromag_dev = BTI_HEAD_TO_HEAD.copy()
+    bti_dev_to_neuromag_dev[:3, 3] = BTI_DEV_TRANSLATION
+    dev_head = (BTI_HEAD_TO_HEAD @ raw.info["dev_ctf_t"]["trans"]
+                @ np.linalg.inv(bti_dev_to_neuromag_dev))
+    raw.info["dev_head_t"] = mne.transforms.Transform("meg", "head", dev_head)
 
 
 def _to_str(x):
@@ -75,26 +100,19 @@ def sanitize_bti_raw(raw: mne.io.Raw):
 # Writing BIDS
 # ---------------------------------------------------------------------------
 
-def write_bids_via_fif(raw: mne.io.Raw, bids_path: BIDSPath, **kwargs):
+def write_bids_fif(raw: mne.io.Raw, bids_path: BIDSPath, **kwargs):
     """
-    Write ``raw`` to BIDS in FIF format.
+    Write ``raw`` to BIDS in FIF format; kwargs go to ``write_raw_bids``.
 
-    The BTi reader's output is first saved to a temporary FIF file and read
-    back, and that copy is what goes to ``write_raw_bids``. Extra keyword
-    arguments are passed through to ``write_raw_bids``.
+    The BTi reader keeps the data as float64, which MNE-BIDS would write as
+    double precision, splitting long runs into several files. Saving to a
+    temporary FIF first stores it as float32, like any other FIF recording.
     """
     with tempfile.TemporaryDirectory() as tmp_dir:
         fif_fname = Path(tmp_dir) / "intermediate_raw.fif"
         raw.save(fif_fname)
-        raw_fif = mne.io.read_raw_fif(fif_fname, preload=True)
-        write_raw_bids(
-            raw_fif,
-            bids_path=bids_path,
-            overwrite=True,
-            format="FIF",
-            allow_preload=True,
-            **kwargs,
-        )
+        write_raw_bids(mne.io.read_raw_fif(fif_fname), bids_path=bids_path, overwrite=True,
+                       format="FIF", **kwargs)
 
 
 def update_json_sidecar(json_path: Path, fields: dict):
@@ -155,8 +173,14 @@ def load_events(raw: mne.io.Raw, eprime_tab: Path):
     return events, event_metadata, "eprime"
 
 
-def convert_subject_meg(meg_subject_dir: Path, bids_root: Path):
-    """Convert the StoryM task MEG runs of one subject."""
+def convert_subject_meg(meg_subject_dir: Path, bids_root: Path,
+                        empty_room: Optional[BIDSPath] = None):
+    """
+    Convert the StoryM task MEG runs of one subject.
+
+    If ``empty_room`` is given, it is recorded as ``AssociatedEmptyRoom`` in
+    each run's MEG sidecar.
+    """
     subject = meg_subject_dir.name
     print(f"\n=== Converting MEG for subject {subject} ===")
 
@@ -169,6 +193,7 @@ def convert_subject_meg(meg_subject_dir: Path, bids_root: Path):
             raise RuntimeError(f"Expected 1 EPRIME file in {run_dir}")
 
         raw = read_hcp_bti(run_dir)
+        restore_head_position(raw)
         events, event_metadata, timing_source = load_events(raw, eprime_files[0])
 
         bids_path = BIDSPath(
@@ -178,12 +203,13 @@ def convert_subject_meg(meg_subject_dir: Path, bids_root: Path):
             datatype="meg",
             root=bids_root,
         )
-        write_bids_via_fif(
+        write_bids_fif(
             raw,
             bids_path,
             events=events,
             event_metadata=event_metadata,
             extra_columns_descriptions=EVENT_COLUMN_DESCRIPTIONS,
+            empty_room=empty_room,
         )
 
         events_json = bids_path.copy().update(suffix="events", extension=".json").fpath
@@ -198,15 +224,19 @@ def convert_subject_meg(meg_subject_dir: Path, bids_root: Path):
 # Empty room MEG
 # ---------------------------------------------------------------------------
 
-def convert_subject_noise(noise_root: Path, subject: str, bids_root: Path):
+def convert_subject_noise(noise_root: Path, subject: str, bids_root: Path) -> dict:
     """
-    Convert one subject's pre-/post-session noise recordings to BIDS.
+    Convert one subject's noise recordings to BIDS.
+
+    HCP records two per session: Rnoise, the empty room, and Pnoise, with the
+    participant in the MEG but no task (mne-hcp calls them
+    ``noise_empty_room`` and ``noise_subject``).
 
     Uses the MNE-BIDS empty room convention: ``subject='emptyroom'``,
     ``task='noise'``, ``session=<recording date>``, ``acq=rnoise|pnoise``.
     Rnoise and Pnoise are recorded on the same day, so they are told apart by
-    ``acq`` rather than ``run``: they are pre- and post-session noise, not
-    repeats of one recording.
+    ``acq`` rather than ``run``: they are different kinds of noise recording,
+    not repeats of one.
 
     Expects raw 4D/BTi data at::
 
@@ -215,25 +245,31 @@ def convert_subject_noise(noise_root: Path, subject: str, bids_root: Path):
 
     The HCP ``<subject>/MEG/{Rnoise,Pnoise}/datacheck`` folders are QC output
     only and contain no raw signal.
+
+    Returns
+    -------
+    dict
+        The BIDSPath written for each recording, keyed ``"rnoise"``/``"pnoise"``.
+        Empty if nothing was found.
     """
+    written = {}
     print(f"\n=== Converting noise (emptyroom) recordings for subject {subject} ===")
 
     unprocessed_meg = noise_root / subject / "unprocessed" / "MEG"
     if not unprocessed_meg.exists():
         print(f" No unprocessed MEG directory found for subject {subject} under {noise_root}")
-        return
+        return written
 
     noise_dirs = sorted(unprocessed_meg.glob("*-Rnoise")) + sorted(unprocessed_meg.glob("*-Pnoise"))
     if not noise_dirs:
         print(f" No Rnoise/Pnoise 4D data found under {unprocessed_meg}")
-        return
+        return written
 
     for run_dir in noise_dirs:
         noise_type = run_dir.name.split("-")[1]  # "1-Rnoise" -> "Rnoise"
         print(f" Noise run: {run_dir.name}")
 
         raw = read_hcp_bti(run_dir)
-        sanitize_bti_raw(raw)
 
         meas_date = raw.info.get("meas_date")
         session = meas_date.strftime("%Y%m%d") if meas_date is not None else "1"
@@ -246,7 +282,9 @@ def convert_subject_noise(noise_root: Path, subject: str, bids_root: Path):
             datatype="meg",
             root=bids_root,
         )
-        write_bids_via_fif(raw, bids_path)
+        write_bids_fif(raw, bids_path)
+        written[noise_type.lower()] = bids_path
+    return written
 
 
 # ---------------------------------------------------------------------------
@@ -276,34 +314,12 @@ def find_anat_images(mri_root: Path) -> dict:
     return images
 
 
-def attach_t1w_landmarks(bids_path: BIDSPath, subject: str, fiducials_path: Path):
+def convert_subject_mri(structural_root: Path, subject: str, bids_root: Path):
     """
-    Write FreeSurfer fiducials into a T1w sidecar as anatomical landmarks.
+    Convert one subject's raw T1w/T2w scans to BIDS anat.
 
-    ``fiducials_path`` is ``<SUBJECTS_DIR>/<subject>/bem/<subject>-fiducials.fif``.
-    """
-    fs_subjects_dir = fiducials_path.parents[2]
-    try:
-        update_anat_landmarks(
-            bids_path=bids_path,
-            landmarks=str(fiducials_path),
-            fs_subject=subject,
-            fs_subjects_dir=str(fs_subjects_dir),
-        )
-        print(f" Attached fiducials from {fiducials_path.name}")
-    except Exception as e:
-        print(f" Could not attach fiducials for {subject}: {e}")
-
-
-def convert_subject_mri(structural_root: Path, subject: str, bids_root: Path,
-                        fs_subjects_dir: Optional[Path] = None):
-    """
-    Convert one subject's T1w/T2w scans to BIDS anat.
-
-    If ``fs_subjects_dir`` is given and contains
-    ``<subject>/bem/<subject>-fiducials.fif``, the nasion/LPA/RPA landmarks
-    are added to the T1w sidecar. That only annotates the anatomical sidecar;
-    it is not MEG<->MRI coregistration.
+    run_freesurfer.py reconstructs the T1w from here, so the FreeSurfer
+    subject shares the scanner space of these images.
     """
     print(f"\n=== Converting MRI for subject {subject} ===")
 
@@ -311,12 +327,6 @@ def convert_subject_mri(structural_root: Path, subject: str, bids_root: Path,
     if not mri_root.exists():
         print(f" No MRI directory found for subject {subject}")
         return
-
-    fiducials_path = None
-    if fs_subjects_dir is not None:
-        candidate = fs_subjects_dir / subject / "bem" / f"{subject}-fiducials.fif"
-        if candidate.exists():
-            fiducials_path = candidate
 
     for suffix, images in find_anat_images(mri_root).items():
         if not images:
@@ -335,29 +345,27 @@ def convert_subject_mri(structural_root: Path, subject: str, bids_root: Path,
             run_note = f" run-{run}" if multi_run else ""
             print(f" Wrote {suffix}{run_note} from {nii.name}")
 
-            # BIDS only expects landmarks on the T1w.
-            if suffix == "T1w" and fiducials_path is not None:
-                attach_t1w_landmarks(bids_path, subject, fiducials_path)
-
 
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
 def convert_subject(meg_subject_dir: Path, structural_root: Path, bids_root: Path,
-                    noise_root: Optional[Path] = None,
-                    fs_subjects_dir: Optional[Path] = None):
+                    noise_root: Optional[Path] = None):
     """Convert the task MEG, empty room MEG (optional) and MRI of one subject."""
     subject = meg_subject_dir.name
-    convert_subject_meg(meg_subject_dir, bids_root)
+    noise_paths = {}
     if noise_root is not None:
-        convert_subject_noise(noise_root, subject, bids_root)
-    convert_subject_mri(structural_root, subject, bids_root, fs_subjects_dir)
+        noise_paths = convert_subject_noise(noise_root, subject, bids_root)
+    # Rnoise is the true empty room recording (Pnoise has the participant in
+    # the MEG), so it's the one linked to the task runs.
+    convert_subject_meg(meg_subject_dir, bids_root, empty_room=noise_paths.get("rnoise"))
+    convert_subject_mri(structural_root, subject, bids_root)
 
 
 def convert_dataset(meg_root: Path, mri_root: Path, bids_root: Path,
                     noise_root: Optional[Path] = None,
-                    fs_subjects_dir: Optional[Path] = None):
+                    subjects: Optional[List[str]] = None):
     """
     Convert every subject under ``meg_root`` to BIDS.
 
@@ -373,13 +381,12 @@ def convert_dataset(meg_root: Path, mri_root: Path, bids_root: Path,
         HCP empty room root, containing
         ``<subject>/unprocessed/MEG/*-Rnoise`` and ``*-Pnoise``. If None,
         noise recordings are not converted.
-    fs_subjects_dir : Path, optional
-        FreeSurfer SUBJECTS_DIR, used to look up
-        ``<subject>/bem/<subject>-fiducials.fif`` for the T1w landmarks.
+    subjects : list of str, optional
+        Subject IDs to convert. If None, every subject under ``meg_root``.
     """
     for subject_dir in sorted(meg_root.iterdir()):
-        if subject_dir.is_dir():
-            convert_subject(subject_dir, mri_root, bids_root, noise_root, fs_subjects_dir)
+        if subject_dir.is_dir() and (subjects is None or subject_dir.name in subjects):
+            convert_subject(subject_dir, mri_root, bids_root, noise_root)
 
 
 def main():
@@ -395,9 +402,8 @@ def main():
              "and *-Pnoise (default: noise recordings are not converted)",
     )
     parser.add_argument(
-        "--subjects-dir", type=Path, default=None,
-        help="FreeSurfer SUBJECTS_DIR, used to look up "
-             "<subject>/bem/<subject>-fiducials.fif for the T1w anatomical landmarks",
+        "--subjects", nargs="+", default=None,
+        help="Subject IDs to convert (default: every subject under meg_root)",
     )
     args = parser.parse_args()
 
@@ -406,7 +412,7 @@ def main():
         mri_root=args.mri_root,
         bids_root=args.bids_root,
         noise_root=args.noise_root,
-        fs_subjects_dir=args.subjects_dir,
+        subjects=args.subjects,
     )
 
 

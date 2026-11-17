@@ -1,244 +1,146 @@
 """
-Run FreeSurfer recon-all on the T1w images of a BIDS dataset produced by
-hcp2bids.py.
+Run FreeSurfer recon-all on the raw T1w images of the BIDS dataset.
+
+The input is ``<bids_root>/sub-<id>/anat/sub-<id>[_run-<N>]_T1w.nii.gz``,
+written by hcp2bids.py from HCP's unprocessed T1w. If a subject has several
+T1w runs, recon-all averages them. The reconstruction therefore shares the
+scanner space of the BIDS ``anat/`` images.
+
+Subjects are named ``sub-<id>`` in SUBJECTS_DIR, like the Appleseed dataset.
+Each subject's progress and errors are in
+``<SUBJECTS_DIR>/sub-<id>/scripts/recon-all-status.log`` and ``recon-all.log``.
 
 Usage:
-    python run_freesurfer.py <bids_root> <subjects_dir>
-        [--subjects ID ...] [--n-jobs 2] [--env-name ncrf-hcp]
+    python run_freesurfer.py <bids_root> [--subjects-dir <SUBJECTS_DIR>]
+        [--subjects ID ...] [--n-jobs 1] [--n-threads 8]
+        [--freesurfer-home <FREESURFER_HOME>]
+
+SUBJECTS_DIR defaults to <bids_root>/derivatives/freesurfer. FreeSurfer is
+found through --freesurfer-home or the FREESURFER_HOME environment variable.
 """
 
 import argparse
 import subprocess
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
+
+from common import find_subjects, get_subjects_dir, setup_freesurfer
 
 
-FREESURFER_HOME = "/usr/local/freesurfer/7-dev"
-DEFAULT_ENV_NAME = "ncrf-hcp"
+def bids_t1w_paths(bids_root: Path, subject_id: str) -> List[Path]:
+    """The subject's raw T1w image(s) in BIDS ``anat/``, sorted by run."""
+    return sorted((Path(bids_root) / f"sub-{subject_id}" / "anat").glob("*_T1w.nii.gz"))
 
 
-def get_bids_subjects(bids_root: Path) -> List[str]:
-    """Return the IDs (without ``sub-``) of BIDS subjects that have a T1w image."""
-    return [
-        subject_dir.name.replace("sub-", "")
-        for subject_dir in sorted(bids_root.glob("sub-*"))
-        if any((subject_dir / "anat").glob("*_T1w.nii.gz"))
-    ]
-
-
-def run_freesurfer_command(cmd: List[str], env_name: str = DEFAULT_ENV_NAME,
-                           timeout: Optional[int] = 3600,
-                           subjects_dir: Optional[Path] = None) -> subprocess.CompletedProcess:
+def run_freesurfer_command(cmd: List[str], **kwargs) -> subprocess.CompletedProcess:
     """
-    Run a command in bash with the conda env activated and FreeSurfer sourced.
+    Run ``cmd`` in bash after sourcing ``$FREESURFER_HOME/SetUpFreeSurfer.sh``.
 
-    Parameters
-    ----------
-    cmd : list of str
-        Command to run.
-    env_name : str
-        Conda environment to activate first.
-    timeout : int or None
-        Timeout in seconds (None for no timeout).
-    subjects_dir : Path, optional
-        Exported as SUBJECTS_DIR if given.
-
-    Returns
-    -------
-    subprocess.CompletedProcess
-        Result of the command, with stdout/stderr captured as text.
+    SUBJECTS_DIR and FREESURFER_HOME are taken from the environment (see
+    common.setup_freesurfer). Keyword arguments go to ``subprocess.run``.
     """
-    script = "\n".join([
-        'eval "$(conda shell.bash hook)"',
-        f"conda activate {env_name}",
-        f"export FREESURFER_HOME={FREESURFER_HOME}",
-        "source $FREESURFER_HOME/SetUpFreeSurfer.sh",
-        f"export SUBJECTS_DIR={subjects_dir}" if subjects_dir else "",
-        " ".join(cmd),
-    ])
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=timeout)
+    script = 'source "$FREESURFER_HOME/SetUpFreeSurfer.sh" > /dev/null\n' + " ".join(cmd)
+    return subprocess.run(["bash", "-c", script], **kwargs)
 
 
-def check_freesurfer(env_name: str = DEFAULT_ENV_NAME):
-    """Raise RuntimeError if FreeSurfer cannot be sourced in ``env_name``."""
-    result = run_freesurfer_command(["which", "recon-all"], env_name, timeout=30)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"FreeSurfer not usable from conda env '{env_name}' with "
-            f"FREESURFER_HOME={FREESURFER_HOME}:\n{result.stderr}\n"
-            "Install from https://surfer.nmr.mgh.harvard.edu/fswiki/Download "
-            "and get a license at https://surfer.nmr.mgh.harvard.edu/registration.html"
-        )
-    print("✓ FreeSurfer environment setup successful")
-
-
-def prepare_subject_dir(subject_id: str, bids_root: Path, subjects_dir: Path, env_name: str):
+def recon_all(subject_id: str, bids_root: Path, subjects_dir: Path,
+              n_threads: int = 1) -> bool:
     """
-    Convert the subject's first BIDS T1w to ``SUBJECTS_DIR/<id>/mri/orig/001.mgz``.
+    Run ``recon-all -all`` for one subject and report the result.
 
-    Does nothing if ``001.mgz`` already exists or the subject has no T1w.
+    On the first run the BIDS T1w run(s) are imported with ``-i``. If the
+    subject folder already exists, recon-all is rerun on what is there.
+
+    Returns True on success.
     """
-    orig_dir = subjects_dir / subject_id / "mri" / "orig"
-    orig_dir.mkdir(parents=True, exist_ok=True)
-    target = orig_dir / "001.mgz"
+    fs_subject = f"sub-{subject_id}"
+    cmd = ["recon-all", "-s", fs_subject, "-all"]
+    if not (subjects_dir / fs_subject).exists():
+        t1w_files = bids_t1w_paths(bids_root, subject_id)
+        if not t1w_files:
+            print(f"  ✗ {subject_id}: no T1w in {bids_root}/{fs_subject}/anat")
+            return False
+        cmd += [arg for t1w in t1w_files for arg in ("-i", str(t1w))]
+    if n_threads > 1:
+        cmd += ["-parallel", "-openmp", str(n_threads)]
 
-    t1w_files = sorted((bids_root / f"sub-{subject_id}" / "anat").glob("*_T1w.nii.gz"))
-    if not t1w_files or target.exists():
-        return
-
-    print(f"  Converting {subject_id}: {t1w_files[0].name}")
-    try:
-        result = run_freesurfer_command(
-            ["mri_convert", str(t1w_files[0]), str(target)],
-            env_name, timeout=300, subjects_dir=subjects_dir,
-        )
-        result.check_returncode()
-        print(f"    ✓ Converted to {target}")
-    except Exception as e:
-        print(f"    ✗ Conversion failed: {e}")
+    print(f"  Started {subject_id}")
+    # recon-all writes its own logs, so its output isn't kept here.
+    result = run_freesurfer_command(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ok = result.returncode == 0
+    log = subjects_dir / fs_subject / "scripts" / "recon-all.log"
+    print(f"  {'✓' if ok else '✗'} {subject_id}: "
+          f"{'finished' if ok else f'recon-all failed, see {log}'}")
+    return ok
 
 
-def run_recon_all_subject(subject_id: str, subjects_dir: Path,
-                          env_name: str = DEFAULT_ENV_NAME) -> Tuple[str, bool, str]:
+def run_freesurfer_recon_all(bids_root: Path, subjects_dir: Optional[Path] = None,
+                             subjects: Optional[List[str]] = None, n_jobs: int = 1,
+                             n_threads: int = 8, freesurfer_home: Optional[str] = None) -> dict:
     """
-    Run recon-all for one subject.
-
-    The T1w must already be at ``SUBJECTS_DIR/<subject_id>/mri/orig/001.mgz``.
-
-    Returns
-    -------
-    tuple
-        (subject_id, success, message)
-    """
-    t1_file = subjects_dir / subject_id / "mri" / "orig" / "001.mgz"
-    if not t1_file.exists():
-        return subject_id, False, f"T1w file not found: {t1_file}"
-
-    try:
-        # recon-all takes several hours, so no timeout.
-        result = run_freesurfer_command(
-            ["recon-all", "-subject", subject_id, "-all"],
-            env_name, timeout=None, subjects_dir=subjects_dir,
-        )
-    except Exception as e:
-        return subject_id, False, f"Error: {e}"
-
-    if result.returncode == 0:
-        return subject_id, True, "recon-all completed successfully"
-    error_msg = result.stderr or result.stdout
-    return subject_id, False, f"recon-all failed: {error_msg[-200:]}"
-
-
-def print_summary(results: dict, n_subjects: int, subjects_dir: Path):
-    """Print which subjects completed and which failed."""
-    print("\n" + "=" * 70)
-    print("RECON-ALL SUMMARY")
-    print("=" * 70)
-    print(f"Completed: {len(results['completed'])}/{n_subjects}")
-    if results["completed"]:
-        print(f"  ✓ {', '.join(results['completed'])}")
-    if results["failed"]:
-        print(f"  ✗ Failed: {', '.join(results['failed'])}")
-    print(f"SUBJECTS_DIR: {subjects_dir}")
-    print("=" * 70 + "\n")
-
-
-def run_freesurfer_recon_all(bids_root: Path, subjects_dir: Path,
-                             env_name: str = DEFAULT_ENV_NAME, n_jobs: int = 2,
-                             subjects: Optional[List[str]] = None) -> dict:
-    """
-    Run recon-all for several subjects in parallel.
+    Run recon-all for several subjects, ``n_jobs`` at a time.
 
     Parameters
     ----------
     bids_root : Path
-        BIDS root directory.
-    subjects_dir : Path
-        FreeSurfer SUBJECTS_DIR to write to.
-    env_name : str
-        Conda environment to activate before sourcing FreeSurfer.
-    n_jobs : int
-        Number of recon-all runs at once.
+        BIDS root with ``sub-<id>/anat/*_T1w.nii.gz``.
+    subjects_dir : Path, optional
+        FreeSurfer SUBJECTS_DIR (default: ``bids_root/derivatives/freesurfer``).
     subjects : list of str, optional
-        Subjects to process. If None, every BIDS subject with a T1w.
+        Subject IDs. If None, every BIDS subject with a T1w.
+    n_jobs : int
+        Number of subjects processed at once.
+    n_threads : int
+        OpenMP threads for each recon-all run.
+    freesurfer_home : str, optional
+        FreeSurfer install folder (default: ``$FREESURFER_HOME``).
 
     Returns
     -------
     dict
-        Keys: 'completed', 'failed', 'summary', and 'subjects_dir' if recon-all ran.
+        ``{"completed": [ids], "failed": [ids]}``
     """
-    bids_root = Path(bids_root)
-    subjects_dir = Path(subjects_dir)
+    subjects_dir = get_subjects_dir(bids_root, subjects_dir)
     subjects_dir.mkdir(parents=True, exist_ok=True)
-
-    print("\n" + "=" * 70)
-    print("FREESURFER ANATOMICAL PROCESSING (recon-all)")
-    print("=" * 70)
-
+    setup_freesurfer(freesurfer_home, subjects_dir)
     if subjects is None:
-        subjects = get_bids_subjects(bids_root)
-    if not subjects:
-        print("⚠ No subjects found in BIDS directory")
-        return {"completed": [], "failed": [], "summary": "No subjects found"}
+        subjects = [s for s in find_subjects(bids_root) if bids_t1w_paths(bids_root, s)]
 
-    print(f"Processing {len(subjects)} subjects with {n_jobs} parallel jobs")
-
-    try:
-        check_freesurfer(env_name)
-    except RuntimeError as e:
-        print(f"✗ {e}")
-        return {"completed": [], "failed": subjects, "summary": str(e)}
-
-    print(f"\nPreparing subject directories in: {subjects_dir}")
-    for subject_id in subjects:
-        prepare_subject_dir(subject_id, bids_root, subjects_dir, env_name)
-
-    print(f"\nRunning recon-all for {len(subjects)} subjects...")
-    results = {"completed": [], "failed": []}
-    with ProcessPoolExecutor(max_workers=n_jobs) as executor:
-        futures = [
-            executor.submit(run_recon_all_subject, subject_id, subjects_dir, env_name)
-            for subject_id in subjects
-        ]
-        for future in as_completed(futures):
-            subject_id, success, message = future.result()
-            results["completed" if success else "failed"].append(subject_id)
-            print(f"  {'✓' if success else '✗'} {subject_id}: {message}")
-
-    print_summary(results, len(subjects), subjects_dir)
-    results["summary"] = f"Completed: {len(results['completed'])}, Failed: {len(results['failed'])}"
-    results["subjects_dir"] = str(subjects_dir)
+    print(f"recon-all for {len(subjects)} subjects, {n_jobs} at a time, {n_threads} threads "
+          f"each\nSUBJECTS_DIR: {subjects_dir}")
+    with ThreadPoolExecutor(max_workers=n_jobs) as executor:
+        ok = list(executor.map(lambda s: recon_all(s, bids_root, subjects_dir, n_threads),
+                               subjects))
+    results = {"completed": [s for s, k in zip(subjects, ok) if k],
+               "failed": [s for s, k in zip(subjects, ok) if not k]}
+    print(f"Completed {len(results['completed'])}/{len(subjects)}"
+          + (f"; failed: {', '.join(results['failed'])}" if results["failed"] else ""))
     return results
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run FreeSurfer recon-all on the T1w images of a BIDS dataset"
+        description="Run FreeSurfer recon-all on the raw T1w images of a BIDS dataset"
     )
-    parser.add_argument("bids_root", type=Path, help="BIDS root directory")
-    parser.add_argument("subjects_dir", type=Path, help="FreeSurfer SUBJECTS_DIR to write to")
-    parser.add_argument(
-        "--subjects", nargs="+",
-        help="Specific subjects to process (e.g., 100307 102816)",
-    )
-    parser.add_argument(
-        "--n-jobs", type=int, default=2,
-        help="Number of parallel recon-all jobs (default: 2)",
-    )
-    parser.add_argument(
-        "--env-name", default=DEFAULT_ENV_NAME,
-        help=f"Conda environment to activate before sourcing FreeSurfer (default: {DEFAULT_ENV_NAME})",
-    )
+    parser.add_argument("bids_root", type=Path, help="BIDS root with sub-<id>/anat/*_T1w.nii.gz")
+    parser.add_argument("--subjects-dir", type=Path, default=None,
+                        help="FreeSurfer SUBJECTS_DIR (default: <bids_root>/derivatives/freesurfer)")
+    parser.add_argument("--subjects", nargs="+",
+                        help="Subject IDs (default: every BIDS subject with a T1w)")
+    parser.add_argument("--n-jobs", type=int, default=1,
+                        help="Number of subjects processed at once (default: 1)")
+    parser.add_argument("--n-threads", type=int, default=8,
+                        help="OpenMP threads for each recon-all run (default: 8)")
+    parser.add_argument("--freesurfer-home", default=None,
+                        help="FreeSurfer install folder (default: $FREESURFER_HOME)")
     args = parser.parse_args()
 
-    run_freesurfer_recon_all(
-        bids_root=args.bids_root,
-        subjects_dir=args.subjects_dir,
-        env_name=args.env_name,
-        n_jobs=args.n_jobs,
-        subjects=args.subjects,
-    )
+    try:
+        run_freesurfer_recon_all(args.bids_root, args.subjects_dir, args.subjects,
+                                 args.n_jobs, args.n_threads, args.freesurfer_home)
+    except RuntimeError as e:
+        parser.error(str(e))
 
 
 if __name__ == "__main__":

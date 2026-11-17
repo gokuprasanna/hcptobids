@@ -1,0 +1,16 @@
+# Conda environment for hcptobids.
+#   mamba env create -f environment.yml     (or: conda env create -f environment.yml)
+#   mamba activate hcptobids
+# FreeSurfer is installed separately; see docs/INSTALL.md.
+name: hcptobids
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - mne>=1.11
+  - mne-bids>=0.18
+  - nibabel
+  - numpy
+  - pandas
+  - scipy
+  - pyvista

@@ -1,0 +1,9 @@
+# Python packages for hcptobids (pip install -r requirements.txt).
+# Same as environment.yml. FreeSurfer is installed separately; see docs/INSTALL.md.
+mne>=1.11
+mne-bids>=0.18
+nibabel
+numpy
+pandas
+scipy
+pyvista
