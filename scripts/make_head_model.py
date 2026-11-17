@@ -13,7 +13,7 @@ It also links FreeSurfer's fsaverage into SUBJECTS_DIR so source estimates
 can be morphed to a common space.
 
 Usage:
-    python make_head_model.py <bids_root> [--subjects-dir <SUBJECTS_DIR>]
+    python scripts/make_head_model.py <bids_root> [--subjects-dir <SUBJECTS_DIR>]
         [--subjects ID ...] [--freesurfer-home <FREESURFER_HOME>]
 
 SUBJECTS_DIR defaults to <bids_root>/derivatives/freesurfer. FreeSurfer (for

@@ -4,7 +4,7 @@ Convert only the unprocessed empty room (Rnoise/Pnoise) HCP MEG recordings to
 BIDS, without the task MEG or MRI. Uses the same conversion as hcp2bids.py.
 
 Usage:
-    python convert_empty_room_to_bids.py <emptyroom_root> <bids_root>
+    python scripts/convert_empty_room_to_bids.py <emptyroom_root> <bids_root>
 
 Where:
     <emptyroom_root> contains <subject>/unprocessed/MEG/*-Rnoise and *-Pnoise

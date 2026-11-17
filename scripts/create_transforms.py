@@ -39,7 +39,7 @@ Output:
     <bids_root>/derivatives/trans/sub-<id>_meg_trans.json   (method and details)
 
 Usage:
-    python create_transforms.py <anatomy_root> <bids_root>
+    python scripts/create_transforms.py <anatomy_root> <bids_root>
         [--method headmodel|transform|fiducials]
         [--subjects-dir <SUBJECTS_DIR>] [--subjects ID ...]
 """

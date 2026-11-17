@@ -96,7 +96,7 @@ print(raw.info["dev_ctf_t"])    # device -> head as the 4D system stored it
 ### 2b. Convert
 
 ```bash
-python hcp2bids.py $HCP_DIR/MEG-StoryMath $HCP_DIR/Structural $BIDS_ROOT \
+python scripts/hcp2bids.py $HCP_DIR/MEG-StoryMath $HCP_DIR/Structural $BIDS_ROOT \
     --noise-root $HCP_DIR/emptyroom --subjects 100307
 ```
 
@@ -132,7 +132,7 @@ FreeSurfer reconstructs the brain surfaces from the T1w image that step 2 wrote 
 **second terminal** with the same variables set, and carry on in the first one:
 
 ```bash
-python run_freesurfer.py $BIDS_ROOT --subjects 100307 --n-threads 8
+python scripts/run_freesurfer.py $BIDS_ROOT --subjects 100307 --n-threads 8
 ```
 
 Follow the progress with:
@@ -175,8 +175,8 @@ even though it came from HCP's processing and not from our MRI?
 Wait for checkpoint 3 (FreeSurfer finished), then:
 
 ```bash
-python make_head_model.py $BIDS_ROOT --subjects 100307
-python create_transforms.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 100307
+python scripts/make_head_model.py $BIDS_ROOT --subjects 100307
+python scripts/create_transforms.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 100307
 ls $BIDS_ROOT/derivatives/freesurfer/sub-100307/bem $BIDS_ROOT/derivatives/trans
 ```
 
@@ -192,7 +192,7 @@ model onto that surface.
 ## 6. Check the alignment
 
 ```bash
-python check_coregistration.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 100307
+python scripts/check_coregistration.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 100307
 ```
 
 The output has one line comparing HCP's head model with our brain surface, and one sensor-to-scalp line per
@@ -228,13 +228,14 @@ uses only `trans` and our brain surface. Which errors can each one catch?
 
 ## 7. Exercise: how sensitive is the result?
 
-Run this from the code folder. It refits the transform two other ways and measures how far each moves the
+Run this from the `hcptobids` folder. It refits the transform two other ways and measures how far each moves the
 cortex compared with your `trans` file. Your `trans` file isn't changed.
 
 ```python
-import os, numpy as np, mne
+import os, sys, numpy as np, mne
 from pathlib import Path
 from mne.transforms import apply_trans
+sys.path.insert(0, "scripts")    # the hcptobids code
 import create_transforms as ct
 
 anat = Path(os.environ["HCP_DIR"]) / "MEG-anatomy"

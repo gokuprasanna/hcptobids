@@ -3,7 +3,7 @@ Convert unprocessed HCP MEG (StoryM task + Rnoise/Pnoise empty room) and
 structural MRI (T1w/T2w) data to BIDS.
 
 Usage:
-    python hcp2bids.py <meg_root> <mri_root> <bids_root>
+    python scripts/hcp2bids.py <meg_root> <mri_root> <bids_root>
         [--noise-root <emptyroom_root>] [--subjects ID ...]
 
 Head position: unprocessed HCP MEG has no digitized head shape or fiducials,

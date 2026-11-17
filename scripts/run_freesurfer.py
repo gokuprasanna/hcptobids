@@ -11,7 +11,7 @@ Each subject's progress and errors are in
 ``<SUBJECTS_DIR>/sub-<id>/scripts/recon-all-status.log`` and ``recon-all.log``.
 
 Usage:
-    python run_freesurfer.py <bids_root> [--subjects-dir <SUBJECTS_DIR>]
+    python scripts/run_freesurfer.py <bids_root> [--subjects-dir <SUBJECTS_DIR>]
         [--subjects ID ...] [--n-jobs 1] [--n-threads 8]
         [--freesurfer-home <FREESURFER_HOME>]
 

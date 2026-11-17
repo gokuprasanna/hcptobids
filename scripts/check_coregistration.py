@@ -16,7 +16,7 @@ For each task run in the BIDS dataset:
    saved to ``derivatives/trans/figures/``.
 
 Usage:
-    python check_coregistration.py <anatomy_root> <bids_root>
+    python scripts/check_coregistration.py <anatomy_root> <bids_root>
         [--subjects-dir <SUBJECTS_DIR>] [--subjects ID ...]
 """
 

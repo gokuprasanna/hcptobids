@@ -6,13 +6,13 @@ subject's own MRI, a FreeSurfer anatomy, head model, source space and MEG → MR
 
 | Script | Purpose |
 |---|---|
-| `hcp2bids.py` | Raw task MEG (with head position), noise MEG, T1w/T2w → BIDS |
-| `convert_empty_room_to_bids.py` | Convert only the noise recordings (same code as `hcp2bids.py`) |
-| `run_freesurfer.py` | `recon-all` on the raw BIDS T1w |
-| `make_head_model.py` | Watershed BEM, single-layer BEM + solution, ico-4 source space, fsaverage link |
-| `create_transforms.py` | MEG head → MRI `trans.fif`, by fitting HCP's head model to our brain surface |
-| `check_coregistration.py` | Numeric checks and pictures of the MEG ↔ MRI alignment |
-| `common.py` | Shared constants (coordinate frames) and helpers |
+| `scripts/hcp2bids.py` | Raw task MEG (with head position), noise MEG, T1w/T2w → BIDS |
+| `scripts/convert_empty_room_to_bids.py` | Convert only the noise recordings (same code as `hcp2bids.py`) |
+| `scripts/run_freesurfer.py` | `recon-all` on the raw BIDS T1w |
+| `scripts/make_head_model.py` | Watershed BEM, single-layer BEM + solution, ico-4 source space, fsaverage link |
+| `scripts/create_transforms.py` | MEG head → MRI `trans.fif`, by fitting HCP's head model to our brain surface |
+| `scripts/check_coregistration.py` | Numeric checks and pictures of the MEG ↔ MRI alignment |
+| `scripts/common.py` | Shared constants (coordinate frames) and helpers |
 
 Documentation:
 
@@ -81,26 +81,26 @@ The order matters: FreeSurfer reads the T1w from step 1, and the transform is fi
 **1. Raw data to BIDS** (minutes per subject)
 
 ```bash
-python hcp2bids.py $HCP_DIR/MEG-StoryMath $HCP_DIR/Structural $BIDS_ROOT --noise-root $HCP_DIR/emptyroom --subjects 100307
+python scripts/hcp2bids.py $HCP_DIR/MEG-StoryMath $HCP_DIR/Structural $BIDS_ROOT --noise-root $HCP_DIR/emptyroom --subjects 100307
 ```
 
 **2. FreeSurfer** (about 30 min per subject with 8 threads; `--n-jobs` subjects at once, `--n-threads` each)
 
 ```bash
-python run_freesurfer.py $BIDS_ROOT --subjects 100307 --n-threads 8
+python scripts/run_freesurfer.py $BIDS_ROOT --subjects 100307 --n-threads 8
 tail -f $BIDS_ROOT/derivatives/freesurfer/sub-100307/scripts/recon-all-status.log   # progress
 ```
 
 **3. Head model** (after recon-all has finished; also makes `bem/brain.surf`, which step 4 fits to)
 
 ```bash
-python make_head_model.py $BIDS_ROOT --subjects 100307
+python scripts/make_head_model.py $BIDS_ROOT --subjects 100307
 ```
 
 **4. MEG → MRI transform** (seconds)
 
 ```bash
-python create_transforms.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 100307
+python scripts/create_transforms.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 100307
 ```
 
 The default is `--method headmodel`. For subjects without a head model file, the last resort is
@@ -109,7 +109,7 @@ The default is `--method headmodel`. For subjects without a head model file, the
 **5. Check the alignment**
 
 ```bash
-python check_coregistration.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 100307
+python scripts/check_coregistration.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 100307
 ```
 
 What to expect:
