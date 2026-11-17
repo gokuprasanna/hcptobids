@@ -185,17 +185,20 @@ Is <id>_MEG_anatomy_headmodel.mat available?
 
 Accuracy on 100307, compared with HCP's transform:
 
-| Method | FreeSurfer made from | Cortex, median (max) | Sensors, median (max) |
-|---|---|---|---|
-| `headmodel` | raw T1w | 1.4 (2.6) mm | 2.2 (4.0) mm |
-| `headmodel` | HCP's processed T1w | 1.5 (2.8) mm | 2.1 (4.1) mm |
-| `transform` | HCP's processed T1w | reference | reference |
-| `fiducials`, MNI-estimated points | raw T1w | 15.0 (18.9) mm | not measured |
+| Method | Cortex, median (max) | Sensors, median (max) |
+|---|---|---|
+| `headmodel` | 1.4 (2.6) mm | 2.2 (4.0) mm |
+| `transform` | reference | reference |
+| `fiducials`, MNI-estimated points | 15.0 (18.9) mm | not measured |
 
 ### `--method headmodel` (standard)
 
 Section 4. It needs only `headmodel.mat`, and it works with a FreeSurfer reconstruction from any T1w of the
 subject. Run `make_head_model.py` before `create_transforms.py`, so that `bem/brain.surf` exists.
+
+Fitted to a reconstruction of HCP's processed T1w instead of the raw one, it differed from HCP's transform by
+about the same amount (cortex 1.5 mm median). Most of the difference is therefore in the fit itself, not in the
+registration between the raw and processed images that the comparison above needs.
 
 ### `--method transform`
 
