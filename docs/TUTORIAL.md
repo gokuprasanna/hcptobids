@@ -13,7 +13,7 @@ By the end you will know:
 - what `dev_head_t` and `trans` are, and how to check them;
 - how fitting HCP's head model gives the MEG–MRI transform, and what limits its accuracy.
 
-The commands alone are in [QUICKSTART.md](../QUICKSTART.md). The full reasoning, coordinate frames and other
+The commands alone are in [README.md](../README.md). The full reasoning, coordinate frames and other
 coregistration methods are in [COREGISTRATION_GUIDE.md](COREGISTRATION_GUIDE.md).
 
 ---
@@ -45,7 +45,7 @@ surface onto ours. The fit gives `trans`.
 
 Install the Python environment and FreeSurfer as described in [INSTALL.md](INSTALL.md). Then get subject
 100307's data from HCP into one folder, laid out as in
-[QUICKSTART.md, Input layout](../QUICKSTART.md#input-layout).
+[README.md, Input layout](../README.md#input-layout).
 
 Open a terminal, activate the Python environment, and set these variables. Replace the `/path/to/...` parts
 with the real locations. Write to a new output folder, so you don't overwrite an existing dataset.
@@ -274,7 +274,7 @@ write in the methods section of a paper about its accuracy?
 `$BIDS_ROOT/derivatives/freesurfer`, mark the nasion and both ear points, and save. That writes
 `bem/sub-100307-fiducials.fif`. Rerun part (b). How close do you get to the head-model result?
 
-If something fails, see [QUICKSTART.md, Troubleshooting](../QUICKSTART.md#troubleshooting).
+If something fails, see [README.md, Troubleshooting](../README.md#troubleshooting).
 
 ---
 

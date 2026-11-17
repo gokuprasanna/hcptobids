@@ -2,7 +2,7 @@
 
 This guide explains how the `hcptobids` workflow is built and why each step is the way it is. It also covers
 alternative methods for subjects with different HCP files. For the commands alone, see
-[QUICKSTART.md](../QUICKSTART.md); for a hands-on run through one subject, [TUTORIAL.md](TUTORIAL.md);
+[README.md](../README.md); for a hands-on run through one subject, [TUTORIAL.md](TUTORIAL.md);
 for installation, [INSTALL.md](INSTALL.md).
 
 All numbers come from subject **100307**.
@@ -22,7 +22,7 @@ Paths are written with these variables:
 Turn unprocessed HCP StoryM MEG data into a BIDS dataset that is ready for source-space analysis with each
 subject's **own** MRI. The layout follows the Appleseed audiobook MEG dataset (Brodbeck et al., 2022, eLife),
 which uses a scaled fsaverage brain instead. The input and output folders are listed in
-[QUICKSTART.md](../QUICKSTART.md#input-layout).
+[README.md](../README.md#input-layout).
 
 Source analysis needs three things to agree:
 
