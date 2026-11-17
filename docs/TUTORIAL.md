@@ -45,7 +45,7 @@ surface onto ours. The fit gives `trans`.
 
 Install the Python environment and FreeSurfer as described in [INSTALL.md](INSTALL.md). Then get subject
 100307's data from HCP into one folder, laid out as in
-[README.md, Input layout](../README.md#input-layout).
+[README.md, Input data](../README.md#input-data).
 
 Open a terminal, activate the Python environment, and set these variables. Replace the `/path/to/...` parts
 with the real locations. Write to a new output folder, so you don't overwrite an existing dataset.

@@ -1,7 +1,8 @@
 # hcptobids: HCP MEG/MRI to BIDS
 
-Converts unprocessed HCP data (StoryM task MEG, Rnoise/Pnoise noise MEG, T1w/T2w MRI) into a BIDS dataset
-with a source-space-ready head model built from each subject's own MRI.
+Converts unprocessed Human Connectome Project (HCP) data into a BIDS dataset ready for MEG source analysis:
+StoryM task MEG with the head position restored, the noise recordings, the T1w/T2w MRI, and, from each
+subject's own MRI, a FreeSurfer anatomy, head model, source space and MEG → MRI transform.
 
 | Script | Purpose |
 |---|---|
@@ -13,36 +14,46 @@ with a source-space-ready head model built from each subject's own MRI.
 | `check_coregistration.py` | Numeric checks and pictures of the MEG ↔ MRI alignment |
 | `common.py` | Shared constants (coordinate frames) and helpers |
 
-Documentation: [docs/INSTALL.md](docs/INSTALL.md) (Python environment, FreeSurfer),
-[docs/TUTORIAL.md](docs/TUTORIAL.md) (one subject end to end, with explanations),
-[docs/COREGISTRATION_GUIDE.md](docs/COREGISTRATION_GUIDE.md) (how coregistration works, other methods).
+Documentation:
+
+- [docs/INSTALL.md](docs/INSTALL.md): Python environment and FreeSurfer
+- [docs/TUTORIAL.md](docs/TUTORIAL.md): one subject end to end, with explanations
+- [docs/COREGISTRATION_GUIDE.md](docs/COREGISTRATION_GUIDE.md): how the coregistration works, other methods,
+  measured accuracy, known limitations
 
 ## Prerequisites
 
 A Python environment from `environment.yml` or `requirements.txt`, and FreeSurfer 7 with a license. See
 [docs/INSTALL.md](docs/INSTALL.md).
 
-## Input layout
+## Input data
+
+From the HCP Young Adult release (<https://www.humanconnectome.org/study/hcp-young-adult>), for each subject:
+
+- unprocessed MEG: the StoryM task runs and the noise recordings (Rnoise, Pnoise);
+- unprocessed 3T structural MRI;
+- the MEG anatomy package, for `<id>_MEG_anatomy_headmodel.mat`. It is the only processed HCP file used.
+
+Each HCP package unpacks to `<id>/...`. Keep each kind in its own folder. The folder names below are the ones
+used in the docs; the scripts take each folder as an argument, so any names work.
 
 ```
 $HCP_DIR/
 ├── MEG-StoryMath/<id>/unprocessed/MEG/{8,9}-StoryM/{4D,EPRIME}/
 ├── emptyroom/<id>/unprocessed/MEG/{1-Rnoise,2-Pnoise}/4D/
 ├── Structural/<id>/unprocessed/3T/{T1w_MPR1,T2w_SPC1}/
-└── MEG-anatomy/<id>/MEG/anatomy/          ← from HCP's "MEG anatomy" package
-    └── <id>_MEG_anatomy_headmodel.mat     the only file the pipeline uses
+└── MEG-anatomy/<id>/MEG/anatomy/<id>_MEG_anatomy_headmodel.mat
 ```
 
-Why the head model: HCP withholds the digitized head shape from the raw MEG, so the MEG ↔ MRI transform can't
-be fitted from the raw data. HCP's head model is a brain-envelope surface in MEG head coordinates, made with
-that head shape. Fitting it onto the brain surface of our own FreeSurfer reconstruction (from the raw T1w) gives
-the transform. No other processed HCP files are used. `transform.txt` isn't needed, because all its matrices
-point into HCP's processed MRI spaces.
+Why the head model: HCP removed the digitized head shape from the public MEG data, so the MEG → MRI transform
+can't be fitted from the raw data. HCP's head model is a brain surface in MEG head coordinates, made with that
+head shape. Fitting it onto the brain surface of our own FreeSurfer reconstruction gives the transform. See
+[docs/COREGISTRATION_GUIDE.md](docs/COREGISTRATION_GUIDE.md) for the details and the alternatives.
 
 ## Output layout
 
 ```
-hcp-bids/
+$BIDS_ROOT/
 ├── sub-<id>/
 │   ├── anat/  sub-<id>_T1w.nii.gz, _T2w.nii.gz          raw scanner-space scans
 │   └── meg/   sub-<id>_task-storymath_run-<N>_meg.fif + sidecars (head position, AssociatedEmptyRoom)
@@ -93,8 +104,7 @@ python create_transforms.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 100307
 ```
 
 The default is `--method headmodel`. For subjects without a head model file, the last resort is
-`--method fiducials`. See [docs/COREGISTRATION_GUIDE.md](docs/COREGISTRATION_GUIDE.md) for the methods
-and their measured accuracy.
+`--method fiducials`; see the guide for the methods and their measured accuracy.
 
 **5. Check the alignment**
 
@@ -107,8 +117,6 @@ What to expect:
 - the head-model line is the ICP fit residual, normally a few millimetres. It isn't an independent check,
   because the transform was fitted to that surface;
 - `derivatives/trans/figures/*_alignment.png`: head centred in the helmet, sensors all around it.
-
-HCP's T1w is defaced, so the scalp surface has no face. That doesn't affect a single-layer MEG BEM.
 
 ## Using the result in MNE
 

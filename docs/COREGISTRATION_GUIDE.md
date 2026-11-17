@@ -7,20 +7,12 @@ for installation, [INSTALL.md](INSTALL.md).
 
 All numbers come from subject **100307**.
 
-Paths are written with these variables:
-
-| Variable | Meaning |
-|---|---|
-| `$HCP_DIR` | folder holding the HCP downloads: `MEG-StoryMath/`, `emptyroom/`, `Structural/`, `MEG-anatomy/` |
-| `$BIDS_ROOT` | the BIDS dataset being written |
-| `$FREESURFER_HOME` | the FreeSurfer installation |
-
 ---
 
 ## 1. The goal
 
 Turn unprocessed HCP StoryM MEG data into a BIDS dataset that is ready for source-space analysis with each
-subject's **own** MRI. The input and output folders are listed in [README.md](../README.md#input-layout).
+subject's **own** MRI. The input and output folders are listed in [README.md](../README.md#input-data).
 
 Source analysis needs three things to agree:
 
