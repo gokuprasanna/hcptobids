@@ -20,9 +20,7 @@ Paths are written with these variables:
 ## 1. The goal
 
 Turn unprocessed HCP StoryM MEG data into a BIDS dataset that is ready for source-space analysis with each
-subject's **own** MRI. The layout follows the Appleseed audiobook MEG dataset (Brodbeck et al., 2022, eLife),
-which uses a scaled fsaverage brain instead. The input and output folders are listed in
-[README.md](../README.md#input-layout).
+subject's **own** MRI. The input and output folders are listed in [README.md](../README.md#input-layout).
 
 Source analysis needs three things to agree:
 
@@ -116,7 +114,7 @@ It took 28 minutes with 8 threads.
 
 ### Step 4: Head model (`make_head_model.py`)
 
-In `derivatives/freesurfer/sub-<id>/bem/`, with the same file names as the Appleseed dataset:
+In `derivatives/freesurfer/sub-<id>/bem/`:
 
 - watershed surfaces, including `brain.surf` (used in step 5) and `sub-<id>-head.fif` (scalp);
 - single-layer BEM `sub-<id>-inner_skull-bem.fif` and its solution `-bem-sol.fif` (one layer is enough for

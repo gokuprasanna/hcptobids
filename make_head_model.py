@@ -1,8 +1,7 @@
 """
 Build the MNE head model for subjects reconstructed by run_freesurfer.py.
 
-For each subject, writes to ``<SUBJECTS_DIR>/sub-<id>/bem/`` (same names as
-the Appleseed dataset):
+For each subject, writes to ``<SUBJECTS_DIR>/sub-<id>/bem/``:
 
     watershed/, inner_skull.surf, outer_skull.surf, outer_skin.surf
     sub-<id>-head.fif                     scalp, used for visual checks
@@ -31,7 +30,7 @@ from mne.bem import make_watershed_bem
 from common import find_subjects, get_subjects_dir, setup_freesurfer
 
 
-BEM_ICO = 4                 # 5120 triangles, as in Appleseed's BEM
+BEM_ICO = 4                 # 5120 triangles
 BEM_CONDUCTIVITY = (0.3,)   # single layer: brain only
 SRC_SPACING = "ico4"
 

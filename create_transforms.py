@@ -34,7 +34,7 @@ fitted from the MEG data. Three methods are available:
     ``mne coreg``), or MNE's MNI-based estimate if that file doesn't exist.
     Least accurate; for subjects with no HCP MEG anatomy at all.
 
-Output, following the Appleseed dataset:
+Output:
     <bids_root>/derivatives/trans/sub-<id>_meg_trans.fif
     <bids_root>/derivatives/trans/sub-<id>_meg_trans.json   (method and details)
 

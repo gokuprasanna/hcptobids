@@ -6,7 +6,7 @@ written by hcp2bids.py from HCP's unprocessed T1w. If a subject has several
 T1w runs, recon-all averages them. The reconstruction therefore shares the
 scanner space of the BIDS ``anat/`` images.
 
-Subjects are named ``sub-<id>`` in SUBJECTS_DIR, like the Appleseed dataset.
+Subjects are named ``sub-<id>`` in SUBJECTS_DIR, matching the BIDS subject labels.
 Each subject's progress and errors are in
 ``<SUBJECTS_DIR>/sub-<id>/scripts/recon-all-status.log`` and ``recon-all.log``.
 

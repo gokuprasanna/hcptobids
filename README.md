@@ -1,8 +1,7 @@
 # hcptobids: HCP MEG/MRI to BIDS
 
 Converts unprocessed HCP data (StoryM task MEG, Rnoise/Pnoise noise MEG, T1w/T2w MRI) into a BIDS dataset
-laid out like the Appleseed audiobook MEG dataset (Brodbeck et al., 2022), with a source-space-ready head model
-built from each subject's own MRI.
+with a source-space-ready head model built from each subject's own MRI.
 
 | Script | Purpose |
 |---|---|
