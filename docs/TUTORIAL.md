@@ -26,7 +26,7 @@ the brain. That takes two transforms:
 ```
 MEG sensors ──dev_head_t──▶ head coordinates ──trans──▶ MRI coordinates ──▶ brain surfaces, head model
              (per run,                         (per subject,
-              in the MEG file)                  derivatives/trans/)
+              in the MEG file)                  derivatives/mne/)
 ```
 
 - **`dev_head_t`** says where the head was inside the helmet during a run. The MEG system measures it at the
@@ -177,14 +177,14 @@ Wait for checkpoint 3 (FreeSurfer finished), then:
 ```bash
 python scripts/make_head_model.py $BIDS_ROOT --subjects 100307
 python scripts/create_transforms.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 100307
-ls $BIDS_ROOT/derivatives/freesurfer/sub-100307/bem $BIDS_ROOT/derivatives/trans
+ls $BIDS_ROOT/derivatives/freesurfer/sub-100307/bem $BIDS_ROOT/derivatives/mne/sub-100307/meg
 ```
 
 The order matters. `make_head_model.py` creates `bem/brain.surf`, and `create_transforms.py` fits HCP's head
 model onto that surface.
 
 > **Checkpoint 5.** `bem/` contains `brain.surf`, `sub-100307-inner_skull-bem-sol.fif` and
-> `sub-100307-ico-4-src.fif`. `trans/` contains `sub-100307_meg_trans.fif` and a `.json` sidecar whose
+> `sub-100307-ico-4-src.fif`. `mne/sub-100307/meg/` contains `sub-100307_trans.fif` and a `.json` sidecar whose
 > `Method` is `headmodel` and whose `FitDistanceMedianMM` is a few millimetres.
 
 ---
@@ -196,7 +196,7 @@ python scripts/check_coregistration.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subject
 ```
 
 The output has one line comparing HCP's head model with our brain surface, and one sensor-to-scalp line per
-run. Pictures go to `$BIDS_ROOT/derivatives/trans/figures/`.
+run. The pictures (`*_coreg.png`) go next to the transform, in `$BIDS_ROOT/derivatives/mne/sub-100307/meg/`.
 
 > **Checkpoint 6.** No sensors are inside the scalp, and the nearest sensors are a few centimetres from it.
 > The head-model distances are a few millimetres. In the pictures, the head sits centred in the grey helmet,
@@ -216,7 +216,7 @@ With a display, you can also look at the alignment interactively:
 import os, mne
 bids_root = os.environ["BIDS_ROOT"]
 info = mne.io.read_info(f"{bids_root}/sub-100307/meg/sub-100307_task-storymath_run-8_meg.fif")
-mne.viz.plot_alignment(info, trans=f"{bids_root}/derivatives/trans/sub-100307_meg_trans.fif",
+mne.viz.plot_alignment(info, trans=f"{bids_root}/derivatives/mne/sub-100307/meg/sub-100307_trans.fif",
                        subject="sub-100307", subjects_dir=f"{bids_root}/derivatives/freesurfer",
                        surfaces=dict(head=0.4, brain=1.0), meg=("helmet", "sensors"), coord_frame="mri")
 ```
@@ -241,7 +241,7 @@ import create_transforms as ct
 anat = Path(os.environ["HCP_DIR"]) / "MEG-anatomy"
 sd = Path(os.environ["BIDS_ROOT"]) / "derivatives/freesurfer"
 
-trans = mne.read_trans(sd.parent / "trans/sub-100307_meg_trans.fif")["trans"]
+trans = mne.read_trans(sd.parent / "mne/sub-100307/meg/sub-100307_trans.fif")["trans"]
 src = mne.read_source_spaces(sd / "sub-100307/bem/sub-100307-ico-4-src.fif", verbose="error")
 cortex_mri = np.vstack([s["rr"][s["vertno"]] for s in src])
 cortex_head = apply_trans(np.linalg.inv(trans), cortex_mri)

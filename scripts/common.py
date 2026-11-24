@@ -30,6 +30,16 @@ def get_subjects_dir(bids_root: Path, subjects_dir: Optional[Path] = None) -> Pa
     return Path(subjects_dir) if subjects_dir else Path(bids_root) / "derivatives" / "freesurfer"
 
 
+def mne_derivatives_dir(bids_root: Path, subject_id: str) -> Path:
+    """``<bids_root>/derivatives/mne/sub-<id>/meg``, where eelbrain keeps per-subject MNE files."""
+    return Path(bids_root) / "derivatives" / "mne" / f"sub-{subject_id}" / "meg"
+
+
+def trans_path(bids_root: Path, subject_id: str) -> Path:
+    """The subject's head -> MRI transform, at the path eelbrain reads it from."""
+    return mne_derivatives_dir(bids_root, subject_id) / f"sub-{subject_id}_trans.fif"
+
+
 def find_subjects(bids_root: Path) -> List[str]:
     """IDs (without ``sub-``) of the BIDS subjects, excluding ``sub-emptyroom``."""
     return [d.name[4:] for d in sorted(Path(bids_root).glob("sub-*"))

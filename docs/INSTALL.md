@@ -114,3 +114,35 @@ You don't need to run FreeSurfer commands by hand. `run_freesurfer.py` runs `rec
   cortex. The watershed brain surface (yellow, after `make_head_model.py`) should wrap the brain closely.
 
 FreeSurfer's own documentation and tutorials are at <https://surfer.nmr.mgh.harvard.edu/fswiki>.
+
+## 3. Eelbrain (optional)
+
+Eelbrain's pipeline GUI can open the converted dataset, for example for the manual coregistration in
+[MANUAL_COREGISTRATION.md](MANUAL_COREGISTRATION.md). It needs eelbrain 0.43 or newer, which at the time of
+writing is installed from GitHub. This environment also runs the `hcptobids` scripts.
+
+```bash
+mamba create -n hcptobids-eelbrain -c conda-forge python=3.12 eelbrain mne-bids h5io \
+    pyvista pyvistaqt pyqt pip cython setuptools-scm
+mamba activate hcptobids-eelbrain
+pip install --no-deps --no-build-isolation git+https://github.com/Eelbrain/Eelbrain.git
+```
+
+The conda package brings eelbrain's dependencies, including wxPython for its GUI. The `pip` line then replaces
+eelbrain itself with the current version, which it compiles; `--no-build-isolation` lets it use the NumPy and
+Cython already in the environment. If conda-forge has eelbrain 0.43 or newer, skip the `pip` line.
+
+Check it:
+
+```bash
+python -c "import eelbrain, wx; print(eelbrain.__version__)"     # 0.43 or newer
+eelbrain --help                                                   # the pipeline GUI command
+```
+
+The pipeline GUI opens the dataset through [eelbrain/pipeline.py](../eelbrain/pipeline.py), which reads its
+location from `$BIDS_ROOT`:
+
+```bash
+export BIDS_ROOT=/path/to/hcp-bids
+eelbrain eelbrain/pipeline.py
+```

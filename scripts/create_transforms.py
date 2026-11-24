@@ -34,9 +34,9 @@ fitted from the MEG data. Three methods are available:
     ``mne coreg``), or MNE's MNI-based estimate if that file doesn't exist.
     Least accurate; for subjects with no HCP MEG anatomy at all.
 
-Output:
-    <bids_root>/derivatives/trans/sub-<id>_meg_trans.fif
-    <bids_root>/derivatives/trans/sub-<id>_meg_trans.json   (method and details)
+Output, where eelbrain reads it:
+    <bids_root>/derivatives/mne/sub-<id>/meg/sub-<id>_trans.fif
+    <bids_root>/derivatives/mne/sub-<id>/meg/sub-<id>_trans.json   (method and details)
 
 Usage:
     python scripts/create_transforms.py <anatomy_root> <bids_root>
@@ -58,7 +58,7 @@ from mne.io.constants import FIFF
 from mne.transforms import apply_trans
 from scipy.spatial import cKDTree
 
-from common import BTI_HEAD_TO_HEAD, find_subjects, get_subjects_dir
+from common import BTI_HEAD_TO_HEAD, find_subjects, get_subjects_dir, trans_path
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +91,8 @@ def read_hcp_transforms(fname: Path) -> Dict[str, np.ndarray]:
 def read_hcp_headmodel_bti(anatomy_root: Path, subject_id: str) -> np.ndarray:
     """Vertices of HCP's single-shell head model, in 4D head coordinates (m)."""
     fname = hcp_anatomy_dir(anatomy_root, subject_id) / f"{subject_id}_MEG_anatomy_headmodel.mat"
+    if not fname.exists():
+        raise FileNotFoundError(f"HCP head model not found: {fname}")
     headmodel = scipy.io.loadmat(fname, squeeze_me=True, struct_as_record=False)["headmodel"]
     return headmodel.bnd.pnt * 1e-3
 
@@ -279,9 +281,9 @@ METHODS = {
 # ---------------------------------------------------------------------------
 
 def create_trans(subject_id: str, anatomy_root: Path, subjects_dir: Path,
-                 output_dir: Path, method: str = "headmodel") -> Tuple[bool, str]:
+                 bids_root: Path, method: str = "headmodel") -> Tuple[bool, str]:
     """
-    Write ``sub-<id>_meg_trans.fif`` (and a JSON sidecar) for one subject.
+    Write ``sub-<id>_trans.fif`` (and a JSON sidecar) for one subject.
 
     Returns
     -------
@@ -296,9 +298,9 @@ def create_trans(subject_id: str, anatomy_root: Path, subjects_dir: Path,
     except (FileNotFoundError, KeyError) as e:
         return False, str(e)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    trans_path = output_dir / f"{fs_subject}_meg_trans.fif"
-    mne.write_trans(trans_path, mne.transforms.Transform("head", "mri", trans), overwrite=True)
+    fname = trans_path(bids_root, subject_id)
+    fname.parent.mkdir(parents=True, exist_ok=True)
+    mne.write_trans(fname, mne.transforms.Transform("head", "mri", trans), overwrite=True)
 
     meta = {
         "Description": "Transform from MEG head to MRI (FreeSurfer surface RAS) coordinates",
@@ -310,8 +312,8 @@ def create_trans(subject_id: str, anatomy_root: Path, subjects_dir: Path,
         "TransformationMatrix": trans.tolist(),
         "TransformationUnits": "m",
     }
-    trans_path.with_suffix(".json").write_text(json.dumps(meta, indent=2))
-    return True, f"Wrote {trans_path.name} ({method})"
+    fname.with_suffix(".json").write_text(json.dumps(meta, indent=2))
+    return True, f"Wrote {fname} ({method})"
 
 
 def create_all_transforms(anatomy_root: Path, bids_root: Path,
@@ -326,7 +328,7 @@ def create_all_transforms(anatomy_root: Path, bids_root: Path,
     anatomy_root : Path
         HCP MEG anatomy root, containing ``<id>/MEG/anatomy/``.
     bids_root : Path
-        BIDS root. Transforms go in ``derivatives/trans``.
+        BIDS root. Transforms go in ``derivatives/mne/sub-<id>/meg``.
     subjects_dir : Path, optional
         FreeSurfer SUBJECTS_DIR (default: ``bids_root/derivatives/freesurfer``).
     subjects : list of str, optional
@@ -341,16 +343,15 @@ def create_all_transforms(anatomy_root: Path, bids_root: Path,
     """
     anatomy_root, bids_root = Path(anatomy_root), Path(bids_root)
     subjects_dir = get_subjects_dir(bids_root, subjects_dir)
-    output_dir = bids_root / "derivatives" / "trans"
     subjects = subjects or find_subjects(bids_root)
     print(f"MEG -> MRI transforms (method: {method}) for {len(subjects)} subjects")
 
     results = {"completed": [], "failed": []}
     for subject_id in subjects:
-        success, message = create_trans(subject_id, anatomy_root, subjects_dir, output_dir, method)
+        success, message = create_trans(subject_id, anatomy_root, subjects_dir, bids_root, method)
         results["completed" if success else "failed"].append(subject_id)
         print(f"  {'✓' if success else '✗'} {subject_id}: {message}")
-    print(f"Completed {len(results['completed'])}/{len(subjects)}. Output: {output_dir}")
+    print(f"Completed {len(results['completed'])}/{len(subjects)}")
     return results
 
 

@@ -13,6 +13,7 @@ subject's own MRI, a FreeSurfer anatomy, head model, source space and MEG → MR
 | `scripts/create_transforms.py` | MEG head → MRI `trans.fif`, by fitting HCP's head model to our brain surface |
 | `scripts/check_coregistration.py` | Numeric checks and pictures of the MEG ↔ MRI alignment |
 | `scripts/common.py` | Shared constants (coordinate frames) and helpers |
+| `eelbrain/pipeline.py` | Minimal eelbrain pipeline, to open the dataset in eelbrain's GUI |
 
 Documentation:
 
@@ -20,6 +21,8 @@ Documentation:
 - [docs/TUTORIAL.md](docs/TUTORIAL.md): one subject end to end, with explanations
 - [docs/COREGISTRATION_GUIDE.md](docs/COREGISTRATION_GUIDE.md): how the coregistration works, other methods,
   measured accuracy, known limitations
+- [docs/MANUAL_COREGISTRATION.md](docs/MANUAL_COREGISTRATION.md): making the transform by hand from three
+  landmarks, with no HCP processed files
 
 ## Prerequisites
 
@@ -61,8 +64,11 @@ $BIDS_ROOT/
 └── derivatives/
     ├── freesurfer/   SUBJECTS_DIR: sub-<id>/ (recon of the raw T1w in anat/), fsaverage
     │                 sub-<id>/bem/sub-<id>-{head,inner_skull-bem,inner_skull-bem-sol,ico-4-src}.fif
-    └── trans/        sub-<id>_meg_trans.fif (+ .json), figures/
+    └── mne/sub-<id>/meg/  sub-<id>_trans.fif (+ .json), <run>_coreg.png (alignment pictures)
 ```
+
+The layout is the one eelbrain's pipeline reads, so the dataset can be opened with
+[eelbrain/pipeline.py](eelbrain/pipeline.py).
 
 ## Workflow
 
@@ -104,7 +110,8 @@ python scripts/create_transforms.py $HCP_DIR/MEG-anatomy $BIDS_ROOT --subjects 1
 ```
 
 The default is `--method headmodel`. For subjects without a head model file, the last resort is
-`--method fiducials`; see the guide for the methods and their measured accuracy.
+`--method fiducials` ([step by step](docs/MANUAL_COREGISTRATION.md)); see the guide for the methods and
+their measured accuracy.
 
 **5. Check the alignment**
 
@@ -116,7 +123,7 @@ What to expect:
 - **no sensors inside the scalp**, with the nearest sensors a few centimetres away;
 - the head-model line is the ICP fit residual, normally a few millimetres. It isn't an independent check,
   because the transform was fitted to that surface;
-- `derivatives/trans/figures/*_alignment.png`: head centred in the helmet, sensors all around it.
+- `derivatives/mne/sub-<id>/meg/*_coreg.png`: head centred in the helmet, sensors all around it.
 
 ## Using the result in MNE
 
@@ -129,7 +136,7 @@ subjects_dir = f"{bids_root}/derivatives/freesurfer"
 subject = "sub-100307"
 
 raw = read_raw_bids(BIDSPath(subject="100307", task="storymath", run=8, datatype="meg", root=bids_root))
-trans = mne.read_trans(f"{bids_root}/derivatives/trans/{subject}_meg_trans.fif")
+trans = mne.read_trans(f"{bids_root}/derivatives/mne/{subject}/meg/{subject}_trans.fif")
 src = mne.read_source_spaces(f"{subjects_dir}/{subject}/bem/{subject}-ico-4-src.fif")
 bem = mne.read_bem_solution(f"{subjects_dir}/{subject}/bem/{subject}-inner_skull-bem-sol.fif")
 fwd = mne.make_forward_solution(raw.info, trans=trans, src=src, bem=bem, eeg=False)

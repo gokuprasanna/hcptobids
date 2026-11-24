@@ -124,7 +124,8 @@ envelope of the brain, not the inner skull. It is fitted onto our watershed `bra
 2. **Iterate:** pair each HCP vertex with its nearest `brain.surf` vertex, drop the worst 10% of pairs, then
    solve for the best rotation and translation (Kabsch/SVD). Repeat until the transform stops changing.
 3. **Combine:** `trans = (4D head → MRI from ICP) @ inv(BTI_HEAD_TO_HEAD)`, written as
-   `derivatives/trans/sub-<id>_meg_trans.fif`. The JSON sidecar records the method and fit residuals.
+   `derivatives/mne/sub-<id>/meg/sub-<id>_trans.fif`, where eelbrain reads it. The JSON sidecar records the
+   method and fit residuals.
 
 The trimming step matters: the two surfaces differ in some places, especially at the base of the brain, and
 those places shouldn't pull the fit. Trimming 10% instead of 0% moves the cortex by 2.1 mm (median) for 100307.
@@ -135,7 +136,7 @@ those places shouldn't pull the fit. Trimming 10% instead of 0% moves the cortex
 |---|---|---|
 | ICP fit residual (sidecar `FitDistanceMedianMM`) | 2.5 mm median, 7.5 mm 95th percentile | how well the two surfaces match after fitting |
 | Sensor-to-scalp distance | 23–44 mm, **0 sensors inside the scalp** | the whole chain: head position, trans, our surfaces |
-| Pictures in `derivatives/trans/figures/` | head centred in the helmet | gross errors |
+| Pictures `derivatives/mne/sub-<id>/meg/*_coreg.png` | head centred in the helmet | gross errors |
 
 These are sanity checks, not proof of accuracy, so the method was also validated once against HCP's own
 transform for 100307. That transform is valid for a FreeSurfer reconstruction of HCP's processed T1w; it was
@@ -234,12 +235,14 @@ midway between the ears, x through the nasion, y toward the left ear). Marking t
 therefore defines the transform.
 
 - It uses `derivatives/freesurfer/sub-<id>/bem/sub-<id>-fiducials.fif`. Make it in `mne coreg`: load the
-  subject, place the three points on the scalp, then save.
+  subject, place the three points on the scalp, then save. Step by step: [MANUAL_COREGISTRATION.md](MANUAL_COREGISTRATION.md).
 - Without that file it falls back to `mne.coreg.get_mni_fiducials`, which was about **15 mm** off for 100307.
   That's fine for checking that the pipeline runs, not for analysis.
-- Hand-placed fiducials should do better, but their accuracy hasn't been measured. It also depends on placing
-  the points where HCP's technicians placed their coils, and there is no head shape to refine the result.
-  Treat results as approximate and say so in any publication.
+- Hand-placed fiducials did somewhat better on 100307: about 11 mm (median) in the best of three attempts.
+  Accuracy depends on placing the points where HCP's technicians placed their coils, and there is no head shape
+  to refine the result. The ear points were the main error, about 1 cm lower than HCP's; see
+  [MANUAL_COREGISTRATION.md](MANUAL_COREGISTRATION.md#how-accurate-is-it). Treat results as approximate and
+  say so in any publication.
 
 ---
 

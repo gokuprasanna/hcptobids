@@ -12,8 +12,9 @@ For each task run in the BIDS dataset:
    and compared with our watershed brain surface. Their centres should agree
    within ~1-2 mm, and the surfaces within a few mm. This tests the MRI side
    (but not for --method headmodel, which was fitted on exactly this).
+   Skipped if the subject has no head model file under ``anatomy_root``.
 3. A picture (front, side, top) of helmet, sensors, scalp and brain,
-   saved to ``derivatives/trans/figures/``.
+   saved next to the trans file as ``<run>_coreg.png``.
 
 Usage:
     python scripts/check_coregistration.py <anatomy_root> <bids_root>
@@ -30,7 +31,7 @@ import pyvista
 from mne.transforms import apply_trans
 from scipy.spatial import cKDTree
 
-from common import BTI_HEAD_TO_HEAD, find_subjects, get_subjects_dir
+from common import BTI_HEAD_TO_HEAD, find_subjects, get_subjects_dir, trans_path
 from create_transforms import read_hcp_headmodel_bti
 
 # MNE's own 3D plotting needs a working Qt display; plain pyvista can render
@@ -85,9 +86,10 @@ def save_alignment_figure(info: mne.Info, trans: mne.transforms.Transform,
 def check_subject(subject_id: str, anatomy_root: Path, bids_root: Path, subjects_dir: Path):
     """Print alignment checks and save figures for one subject."""
     fs_subject = f"sub-{subject_id}"
-    trans_dir = bids_root / "derivatives" / "trans"
-    trans = mne.read_trans(trans_dir / f"{fs_subject}_meg_trans.fif")
-    method = json.loads((trans_dir / f"{fs_subject}_meg_trans.json").read_text()).get("Method", "?")
+    trans_fname = trans_path(bids_root, subject_id)
+    trans = mne.read_trans(trans_fname)
+    sidecar = trans_fname.with_suffix(".json")
+    method = json.loads(sidecar.read_text()).get("Method", "?") if sidecar.exists() else "unknown"
     print(f"\n=== Coregistration check for {fs_subject} ===")
 
     # Our surfaces, MRI frame, m.
@@ -98,14 +100,18 @@ def check_subject(subject_id: str, anatomy_root: Path, bids_root: Path, subjects
     scalp, brain = scalp_surf["rr"], brain_surf["rr"]
     scalp_tree, scalp_center = cKDTree(scalp), scalp.mean(axis=0)
 
-    hcp_brain_head = apply_trans(BTI_HEAD_TO_HEAD, read_hcp_headmodel_bti(anatomy_root, subject_id))
-    hcp_brain_mri = apply_trans(trans, hcp_brain_head)
-    shift = (hcp_brain_mri.mean(axis=0) - brain.mean(axis=0)) * 1e3
-    d = cKDTree(brain).query(hcp_brain_mri)[0] * 1e3
-    note = "  (fit residual: trans was fitted to this surface)" if method == "headmodel" else ""
     print(f" Transform method: {method}")
-    print(f" HCP head model vs our brain surface: centre shift {np.linalg.norm(shift):.1f} mm; "
-          f"distance median {np.median(d):.1f}, 95th percentile {np.percentile(d, 95):.1f} mm{note}")
+    try:
+        hcp_brain_bti = read_hcp_headmodel_bti(anatomy_root, subject_id)
+    except FileNotFoundError:
+        print(" HCP head model not found: skipping the head model comparison")
+    else:
+        hcp_brain_mri = apply_trans(trans, apply_trans(BTI_HEAD_TO_HEAD, hcp_brain_bti))
+        shift = (hcp_brain_mri.mean(axis=0) - brain.mean(axis=0)) * 1e3
+        d = cKDTree(brain).query(hcp_brain_mri)[0] * 1e3
+        note = "  (fit residual: trans was fitted to this surface)" if method == "headmodel" else ""
+        print(f" HCP head model vs our brain surface: centre shift {np.linalg.norm(shift):.1f} mm; "
+              f"distance median {np.median(d):.1f}, 95th percentile {np.percentile(d, 95):.1f} mm{note}")
 
     for meg_file in sorted((bids_root / fs_subject / "meg").glob("*_meg.fif")):
         info = mne.io.read_info(meg_file, verbose="error")
@@ -122,7 +128,7 @@ def check_subject(subject_id: str, anatomy_root: Path, bids_root: Path, subjects
         print(f" {run_name}: sensor-to-scalp (mm) min {d.min():.1f}, median {np.median(d):.1f}, "
               f"max {d.max():.1f}; sensors inside scalp: {n_inside}")
         save_alignment_figure(info, trans, scalp_surf, brain_surf, sensors_mri,
-                              trans_dir / "figures" / f"{run_name}_alignment.png", run_name)
+                              trans_fname.parent / f"{run_name}_coreg.png", run_name)
 
 
 def main():
@@ -137,9 +143,8 @@ def main():
     args = parser.parse_args()
 
     subjects_dir = get_subjects_dir(args.bids_root, args.subjects_dir)
-    trans_dir = args.bids_root / "derivatives" / "trans"
     subjects = args.subjects or [s for s in find_subjects(args.bids_root)
-                                 if (trans_dir / f"sub-{s}_meg_trans.fif").exists()]
+                                 if trans_path(args.bids_root, s).exists()]
     for subject_id in subjects:
         check_subject(subject_id, args.anatomy_root, args.bids_root, subjects_dir)
 
